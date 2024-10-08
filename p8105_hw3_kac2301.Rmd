@@ -1,0 +1,32 @@
+---
+title: "p8105_hw3_kac2301"
+author: "Kate Colvin"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+```{r}
+
+library(p8105.datasets)
+data("ny_noaa")
+
+```
+
+## Question 2
+
+```{r}
+
+```
+
+
+## Question 3
+
+```{r}
+
+```
+
