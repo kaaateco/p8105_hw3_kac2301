@@ -5,7 +5,11 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+
 ```
 
 ## Question 1
@@ -17,16 +21,190 @@ data("ny_noaa")
 
 ```
 
+
+
 ## Question 2
+
+Loading in data, cleaning names and renaming variables, creating merged dataframe
 
 ```{r}
 
+accel_df <- read_csv("data/nhanes_accel.csv") %>% 
+  janitor::clean_names()
+
+covar_df <- read_csv("data/nhanes_covar.csv")
+names(covar_df) <- c("seqn", "sex", "age", "bmi", "education")
+covar_df <- covar_df %>% 
+  slice(-1:-4) %>% 
+  mutate(sex = 
+           case_match(
+             sex, 
+             "1" ~ "male",
+             "2" ~ "female"), 
+         education = 
+           case_match(
+             education,
+             "1" ~ "Less than high school", 
+             "2" ~ "High school equivalent", 
+             "3" ~ "More than high school"), 
+         seqn = as.double(seqn), 
+         age = as.integer(age))
+
+
+# merging tables, filtering variable values that we want into final dataset
+
+nhanes_df <- left_join(covar_df, accel_df, by = "seqn") %>% 
+  arrange(seqn) %>% 
+  filter(age >= 21) %>% 
+  drop_na() %>% 
+  mutate(bmi = as.double(bmi), 
+         education = factor(education, 
+                            ordered = TRUE, 
+                            levels = c("Less than high school", 
+                                       "High school equivalent", 
+                                       "More than high school")))
+head(nhanes_df)
+
 ```
+
+Creating long form table 
+
+```{r}
+
+nhanes_df_longer <- nhanes_df %>% 
+  pivot_longer(min1:min1440, 
+               names_to = "minute_number", 
+               values_to = "mims", 
+               names_prefix = "min") %>% 
+  mutate(minute_number = as.integer(minute_number))
+
+head(nhanes_df_longer)
+
+```
+
+Creating table for the number of men and women in each education category
+
+```{r}
+
+nhanes_df %>% group_by(education, sex) %>% 
+  summarize(count = n())
+
+```
+
+Looking at the above table, the count of men and women in each education level seems roughly equivalent, except that many more men have a high school equivalent level of education. 
+
+Creating visualization of the age distributions for men and women in each education category
+
+```{r}
+
+nhanes_df %>% ggplot(aes(x = age, fill = sex)) +
+  geom_density(alpha = 0.4) +
+  facet_grid(~education) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  ylim(0, 0.03)
+
+```
+
+Looking at the above plots, it's immediately obvious that most of the people with an education beyond high school are young men and women (people under 40 years old), and are generally primarily women. Looking at the lower two education categories, it seems like the people with less than a high school degree are primarily middle-aged and older (older than 45), and that people with a high school equivalent are split by age and by gender. Most of the people with a high school equivalent who are older than 50 are women, while the people who are younger are mostly men. 
+
+Aggregating across minutes to create a total activity variable for each participant
+
+```{r}
+
+nhanes_df <- nhanes_df %>% 
+  group_by(seqn) %>% 
+  mutate(
+    total_activity = sum(c_across(min1:min1440)))
+
+```
+
+Creating plot of total activities vs. age 
+
+```{r}
+
+nhanes_df %>% ggplot(aes(x = age, y = total_activity, color = sex)) +
+  geom_point() +
+  facet_grid(~education) + 
+  theme(legend.position = "bottom") +
+  geom_smooth(se = FALSE)
+
+```
+
+For all education levels and genders, total activity goes down with age. Interestingly, for people with less than a high school degree, they start with a much higher level of physical activity than the other two education levels, but eventually does decline to about the same level. People with more than a high school degree have the most consistent total activity levels across age compared to the other two education categories. 
+
+Creating plots of the 24-hour activity time courses for each education level
+
+```{r}
+
+# Non-aggregated plot
+
+nhanes_df_longer %>% ggplot(aes(x = minute_number, y = mims, color = sex)) + 
+  geom_line(size = 0.1, alpha = 0.3) + 
+  facet_grid(~education) + 
+  geom_smooth() + 
+  theme(legend.position = "bottom")
+
+```
+
+Creating a clearer plot with MIMS averaged by gender for each minute 
+
+```{r}
+
+nhanes_df_longer %>% group_by(minute_number, sex, education) %>% 
+  summarize(
+    mims_sum = mean(mims)) %>% 
+  ggplot(aes(x = minute_number, y = mims_sum, color = sex)) + 
+  geom_line(alpha = 0.5) + 
+  facet_grid(~education) + 
+  geom_smooth() + 
+  theme(legend.position = "bottom")
+
+```
+
+Looking at the plots above, it's clear that there is large variance in the amount of physical activity people are getting based on the MIMS measurement. One interesting finding is that the difference in physical activity between men and women increases with education level. Specifically, women become more active than men at higher education levels. Additionally, it's interesting that the area with the lowest amount of physical activity in each graph is very narrow, indicating that theres only an hour or two where most people are sleeping/resting at around 4AM.
+
 
 
 ## Question 3
 
+Loading in, cleaning, and merging datasets
+
 ```{r}
 
+jan2020_df <- read_csv("data/citibike/Jan 2020 Citi.csv") %>% 
+  mutate(year = 2020, month = "January")
+
+july2020_df <- read_csv("data/citibike/July 2020 Citi.csv") %>% 
+  mutate(year = 2020, month = "July")
+
+jan2024_df <- read_csv("data/citibike/Jan 2024 Citi.csv") %>% 
+  mutate(year = 2024, month = "January")
+
+july2024_df <- read_csv("data/citibike/July 2024 Citi.csv") %>% 
+  mutate(year = 2024, month = "July")
+
+# Merging into one table
+
+citi_df <- bind_rows(jan2020_df, july2020_df, jan2024_df, july2024_df) %>% 
+    select(ride_id, rideable_type, duration, weekdays, month, 
+         year, start_station_name, end_station_name, member_casual)
+
+head(citi_df)
+
 ```
+
+The final merged data set above has 9 columns and 99,485 rows. Each row represents a ride on a Citi Bike. Some of the important variables are duration (minutes), weekdays, month, year, and member_casual (rider status as a member or not). 
+
+Creating table of the total number of rides in each combination of year and month, separating casual riders and members. 
+
+```{r}
+
+citi_df %>% group_by(year, month, member_casual) %>% 
+  summarize(
+    count = n()
+  )
+
+```
+
 
